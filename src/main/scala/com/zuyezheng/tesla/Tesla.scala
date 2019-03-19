@@ -2,7 +2,9 @@ package com.zuyezheng.tesla
 
 import akka.actor.{ActorSystem, Props}
 import akka.stream.ActorMaterializer
+import ch.qos.logback.classic.{Level, Logger}
 import com.zuyezheng.tesla.api.TeslaClient
+import org.slf4j.LoggerFactory
 import play.api.libs.ws.ahc.StandaloneAhcWSClient
 
 import scala.annotation.tailrec
@@ -18,6 +20,8 @@ import scala.concurrent.ExecutionContext.Implicits.global
 object Tesla {
     
     def main(args: Array[String]): Unit = {
+        LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME).asInstanceOf[Logger].setLevel(Level.INFO)
+        
         parseArgs(args.toList) match {
             case Some((username, password)) =>
                 implicit val system: ActorSystem = ActorSystem("teslaLogger")
@@ -27,7 +31,7 @@ object Tesla {
                 
                 // try to authenticate with username and password
                 for(
-                    client <- TeslaClient(wsClient, getClass.getResource("/client.json"), username, password);
+                    client <- TeslaClient(wsClient, "client.json", username, password);
                     vehicles <- client.vehicles
                 ) {
                     system.actorOf(

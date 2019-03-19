@@ -1,4 +1,5 @@
 .idea
-project
+project/target
+project/project
 target
 logs/*.csv

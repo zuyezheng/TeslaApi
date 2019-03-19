@@ -1,6 +1,5 @@
 package com.zuyezheng.tesla.api
 
-import java.net.URL
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
@@ -12,7 +11,7 @@ import akka.stream.scaladsl.{Framing, Keep, Source}
 import akka.stream.{ActorMaterializer, OverflowStrategy}
 import akka.util.ByteString
 import akka.{Done, NotUsed}
-import com.zuyezheng.lang.TryWith
+import com.typesafe.scalalogging.Logger
 import com.zuyezheng.tesla.api.TeslaClient.ClientCreds
 import play.api.libs.json.Reads._
 import play.api.libs.json.{Reads, _}
@@ -30,7 +29,9 @@ import scala.io.{Source => IoSource}
   * @author zuye.zheng
   */
 class TeslaClient(val wsClient: StandaloneWSClient, val email: String, val clientCreds: ClientCreds, val authResponse: AuthResponse) {
-
+    
+    private val logger: Logger = Logger[TeslaClient]
+    
     def vehicles: Future[List[Vehicle]] = {
         this.wsClient.url(TeslaClient.BaseUrl + "api/1/vehicles")
             .addHttpHeaders(("Authorization", "Bearer " + this.authResponse.accessToken))
@@ -79,7 +80,7 @@ class TeslaClient(val wsClient: StandaloneWSClient, val email: String, val clien
                 case BinaryMessage.Strict(data) => data.utf8String
             })
             .map(s => {
-                println(s)
+                this.logger.info(s"Streaming for '${vehicle.vin}': ${s}.")
         
                 // parse the string into a streaming frame
                 val json = Json.parse(s)
@@ -111,6 +112,8 @@ class TeslaClient(val wsClient: StandaloneWSClient, val email: String, val clien
                         s"${this.email}:${vehicle.tokens.head}".getBytes(StandardCharsets.UTF_8)
                     )
                 )))
+    
+                this.logger.info(s"Sent stream subscribe message for '${vehicle.vin}'.")
 
                 Future.successful(Done)
             } else {
@@ -118,7 +121,7 @@ class TeslaClient(val wsClient: StandaloneWSClient, val email: String, val clien
             }
         }
 
-        connected.onComplete(_ => println("Connected to streaming API."))
+        connected.onComplete(_ => this.logger.info(s"Connected to streaming API for '${vehicle.vin}'."))
 
         stream
     }
@@ -157,21 +160,18 @@ object TeslaClient {
     private val BaseUrl = "https://owner-api.teslamotors.com/"
     private val AuthUrl = BaseUrl + "oauth/token"
 
-    def apply(wsClient: StandaloneWSClient, clientSpec: URL, email: String, password: String): Future[TeslaClient] = {
-        TryWith().execute(resources => {
-            val credSource = resources.and(IoSource.fromFile(clientSpec.getPath))
-            val creds = Json.parse(credSource.mkString).as[ClientCreds]
+    def apply(wsClient: StandaloneWSClient, clientSpec: String, email: String, password: String): Future[TeslaClient] = {
+        val creds = Json.parse(IoSource.fromResource(clientSpec).mkString).as[ClientCreds]
 
-            wsClient.url(TeslaClient.AuthUrl)
-                .post(Map(
-                    "client_id" -> creds.clientId,
-                    "client_secret" -> creds.clientSecret,
-                    "email" -> email,
-                    "password" -> password,
-                    "grant_type" -> "password"
-                ))
-                .map(response => new TeslaClient(wsClient, email, creds, Json.parse(response.body).as[AuthResponse]))
-        })
+        wsClient.url(TeslaClient.AuthUrl)
+            .post(Map(
+                "client_id" -> creds.clientId,
+                "client_secret" -> creds.clientSecret,
+                "email" -> email,
+                "password" -> password,
+                "grant_type" -> "password"
+            ))
+            .map(response => new TeslaClient(wsClient, email, creds, Json.parse(response.body).as[AuthResponse]))
     }
 
 
