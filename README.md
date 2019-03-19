@@ -4,4 +4,4 @@ Precompiled streaming logger can be used with `java -jar TeslaApi-0.1.jar -u <us
 
 Client implementation targeted for the streaming websocket endpoint in [TeslaClient](src/main/scala/com/zuyezheng/tesla/api/TeslaClient.scala).
 
-Actor with reconnect and reauthentication to stream to CSV in [TeslaLogger](src/main/scala/com/zuyezheng/tesla/TeslaLogger.scala)
+Actor with reconnect and reauthentication to stream to CSV in [TeslaLogger](src/main/scala/com/zuyezheng/tesla/TeslaLogger.scala).
