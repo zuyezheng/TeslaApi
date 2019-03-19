@@ -34,11 +34,13 @@ object Tesla {
                     client <- TeslaClient(wsClient, "client.json", username, password);
                     vehicles <- client.vehicles
                 ) {
+                    // start streaming using the first vehicle
                     system.actorOf(
                         Props(classOf[TeslaLogger], materializer),
                         "vehicle_" + vehicles.head.vin
                     ) ! TeslaLogger.Config(client, vehicles.head)
                 }
+                
             case _ => throw new RuntimeException("Missing username(-u) and/or password(-p).")
         }
     }

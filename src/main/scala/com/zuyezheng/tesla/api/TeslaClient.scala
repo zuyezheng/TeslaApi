@@ -32,33 +32,15 @@ class TeslaClient(val wsClient: StandaloneWSClient, val email: String, val clien
     
     private val logger: Logger = Logger[TeslaClient]
     
+    /**
+      * Return a list of vehicles associated with the account.
+      */
     def vehicles: Future[List[Vehicle]] = {
         this.wsClient.url(TeslaClient.BaseUrl + "api/1/vehicles")
             .addHttpHeaders(("Authorization", "Bearer " + this.authResponse.accessToken))
             .get()
             .map(response => {
                 (Json.parse(response.body) \ "response").as[List[Vehicle]]
-            })
-    }
-    
-    /**
-      * Deprecated long polling streaming endpoint.
-      */
-    def streamLegacy(vehicle: Vehicle): Future[Source[String, _]] = {
-        this.wsClient.url("https://streaming.vn.teslamotors.com/stream/"
-            + vehicle.vehicleId
-            + "?values="
-            + StreamingProperty.keys.mkString(",")
-        )
-            .withAuth(this.email, vehicle.tokens.head, WSAuthScheme.BASIC)
-            .withRequestTimeout(10 minutes)
-            .stream().map(response => response.status match {
-                case 200 =>
-                    response.bodyAsSource
-                        .via(Framing.delimiter(ByteString("\n"), maximumFrameLength = 1024))
-                        .map(_.utf8String.trim)
-                case _ =>
-                    Source.failed(new Exception("Could not stream: (" + response.status + ") " + response.statusText))
             })
     }
     
@@ -94,9 +76,11 @@ class TeslaClient(val wsClient: StandaloneWSClient, val email: String, val clien
                 case frame@StreamingFrame.Data(_, _, _, Some(e)) => e match {
                     // not really an error, wait for vehicle to connect again
                     case "vehicle_disconnected" => frame
-                    // something probably went wrong, probably want to re-authenticate
+                    
+                    // something probably went wrong, probably want to reauthenticate
                     case _ => throw new RuntimeException(e)
                 }
+                
                 case frame => frame
             }
             .preMaterialize()
@@ -124,6 +108,27 @@ class TeslaClient(val wsClient: StandaloneWSClient, val email: String, val clien
         connected.onComplete(_ => this.logger.info(s"Connected to streaming API for '${vehicle.vin}'."))
 
         stream
+    }
+    
+    /**
+      * Deprecated long polling streaming endpoint.
+      */
+    def streamLegacy(vehicle: Vehicle): Future[Source[String, _]] = {
+        this.wsClient.url("https://streaming.vn.teslamotors.com/stream/"
+            + vehicle.vehicleId
+            + "?values="
+            + StreamingProperty.keys.mkString(",")
+        )
+            .withAuth(this.email, vehicle.tokens.head, WSAuthScheme.BASIC)
+            .withRequestTimeout(10 minutes)
+            .stream().map(response => response.status match {
+            case 200 =>
+                response.bodyAsSource
+                    .via(Framing.delimiter(ByteString("\n"), maximumFrameLength = 1024))
+                    .map(_.utf8String.trim)
+            case _ =>
+                Source.failed(new Exception("Could not stream: (" + response.status + ") " + response.statusText))
+        })
     }
 
     /**

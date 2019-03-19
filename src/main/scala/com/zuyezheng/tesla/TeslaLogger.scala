@@ -16,7 +16,7 @@ import scala.concurrent.duration._
 import scala.util.{Failure, Properties, Success}
 
 /**
-  * Actor that does the logging and re-authenticates when needed.
+  * Actor for stream to CSV logging with reconnect and reauthentication.
   *
   * @author zuye.zheng
   */
@@ -31,20 +31,22 @@ class TeslaLogger(implicit materializer: ActorMaterializer) extends Actor {
         case Config(client, vehicle, retry) =>
             this.logger.info(s"Starting logging for '${vehicle.vin}'.")
             
+            // start streaming for the given vehicle
             client.stream(vehicle).runWith(Flow[StreamingFrame]
                 // only log values for data updates
                 .collect({ case StreamingFrame.Data("data:update", _, value, _) => value })
                 .map(_ + Properties.lineSeparator)
                 .map(ByteString(_))
+                // create or append to an existing file
                 .toMat(FileIO.toPath(
                     Paths.get("logs/vehicle_" + vehicle.vin + ".csv"),
                     Set(WRITE, APPEND, CREATE)
                 ))(Keep.right)
             ).onComplete {
                 case Success(_) =>
-                    // finished successfully, keep streaming
-                    this.logger.info(s"Completed logging, reconnecting for '${vehicle.vin}'.")
+                    this.logger.info(s"Stream closed, reconnecting for '${vehicle.vin}'.")
                     this.self ! Config(client, vehicle)
+                    
                 case Failure(e) =>
                     this.logger.error(s"Logging error, will try to recover for '${vehicle.vin}': ${e.getMessage}")
                     
@@ -59,6 +61,7 @@ class TeslaLogger(implicit materializer: ActorMaterializer) extends Actor {
                                 this.self,
                                 Config(refreshedClient, refreshedVehicle, retry + 1)
                             )
+                            
                         case _ =>
                             // stop logging if can't re-auth
                             this.logger.error(s"Could not reauthenticate, stopping logging for '${vehicle.vin}'.")
